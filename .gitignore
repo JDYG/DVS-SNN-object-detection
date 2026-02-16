@@ -1,0 +1,15 @@
+# .gitignore
+# ignore all files
+*
+# but do not ignore folders
+!*/
+
+
+# do not ignore following files
+!*.py
+!*.sh
+!*.m
+# 
+!.gitignore
+
+GEN1_od/experiments/

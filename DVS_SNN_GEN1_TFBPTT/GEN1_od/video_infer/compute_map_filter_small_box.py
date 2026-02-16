@@ -1,0 +1,134 @@
+import os
+import numpy as np
+import torch
+from utils.metrics import ConfusionMatrix, box_iou, ap_per_class
+from utils.common import cxcywh_n2xlylxryr
+NAMES = {0: 'car', 1: 'pedestrian'}
+
+def main():
+    folder = 'GEN1_od/video_infer/config_yoloCS3_64attn_20e3_hard_epoch=02-step=13185-val_loss=3.31'
+    files = os.listdir(folder)
+    preds_files = [file for file in files if file.endswith('preds.txt')]
+
+    stats = []
+    iouv = torch.linspace(0.5, 0.95, 10)
+    for preds_file in preds_files:
+        print(f'Processing {preds_file}')
+        gt_file = preds_file.replace('preds', 'gt')
+        preds = np.loadtxt(os.path.join(folder, preds_file))
+
+        if preds.ndim == 1:
+            preds = preds[np.newaxis, :]
+        conf = preds[:, 5] * preds[:, 6]
+        preds = preds[conf >= 0.3]
+
+        preds_valid = filter_small_box(preds[:, 1:5], 30, 10)
+        preds = preds[preds_valid]
+
+        gt = np.loadtxt(os.path.join(folder, gt_file))
+        if gt.ndim == 1:
+            gt = gt[np.newaxis, :]
+        gt = gt[gt[:, 1] <= 2]
+        gt_xl_yl_xr_yr = cxcywh_n2xlylxryr(gt[:, 2:], 304, 240)
+        gt_valid = filter_small_box(gt_xl_yl_xr_yr, 30, 10)
+        gt = gt[gt_valid]
+
+
+        time_index_preds = preds[:, 0]
+        unique_time_index_preds = np.unique(time_index_preds)
+        preds_list = []
+        for time_index in unique_time_index_preds:
+            data_for_time_index = preds[time_index_preds == time_index]
+            preds_list.append(data_for_time_index)
+
+        val_stats = run_metrics(preds_list, gt, iouv, stats, 240, 304)
+
+    map50, map = compute_metrics(val_stats, names=NAMES)
+    print(f'mAP@0.5: {map50}, mAP: {map}')
+
+
+
+def filter_small_box(preds, min_box_diag=60, min_box_side=20):
+
+    W = preds[:, 2] - preds[:, 0]
+    H = preds[:, 3] - preds[:, 1]
+    diag_squre = W ** 2 + H ** 2
+    min_side = np.minimum(W, H)
+    valid_mask = np.logical_and(diag_squre >= min_box_diag ** 2, min_side >= min_box_side)
+
+    return valid_mask
+
+
+def process_batch(detections, labels, iouv):
+
+
+    correct = np.zeros((detections.shape[0], iouv.shape[0])).astype(bool)
+
+    iou = box_iou(labels[:, 1:], detections[:, :4])
+    correct_class = labels[:, 0:1] == detections[:, 5]
+    for i in range(len(iouv)):
+        x = torch.where((iou >= iouv[i]) & correct_class)  
+        if x[0].shape[0]:
+            matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
+            if x[0].shape[0] > 1:
+      
+                matches = matches[matches[:, 2].argsort()[::-1]]
+                matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+   
+                matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+         
+            correct[matches[:, 1].astype(int), i] = True
+  
+    return torch.tensor(correct, dtype=torch.bool, device=iouv.device)
+
+def run_metrics(preds_list, targets, iouv, stats, img_h, img_w):
+    niou = iouv.numel()
+
+    targets = torch.from_numpy(targets)
+    if len(targets.shape) == 1:
+        targets = targets.unsqueeze(0)
+    device = targets.device
+    for preds in preds_list:
+        time_index = int(preds[0, 0])
+        pred = preds[:, 1:]
+        pred = torch.from_numpy(pred)
+        labels = targets[targets[:, 0] == time_index][:, 1:]
+        nl = labels.shape[0]
+        npr = pred.shape[0] if pred is not None else 0
+        correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)
+        if npr == 0:
+            if nl:
+                stats.append((correct, *torch.zeros((2, 0), device=device), labels[:, 0]))
+            continue
+        if pred.shape[1] == 7:
+            pred[:, 4] *= pred[:, 5]
+            pred[:, 5] = pred[:, 6]
+            pred = pred[:, :6]
+
+        if nl:
+            predn = pred.clone()
+            tbox = cxcywh_n2xlylxryr(labels[:, 1:], img_h=img_h, img_w=img_w)
+            labelsn = torch.cat((labels[:, 0:1], tbox), 1)
+
+            correct = process_batch(predn, labelsn, iouv)
+
+        stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))
+
+    return stats
+
+
+def compute_metrics(stats, names):
+    tp, fp, p, r, f1, mp, mr, map50, ap50, map = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]
+    if len(stats) and stats[0].any():
+        tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=False, save_dir='.', names=names)
+        ap50, ap = ap[:, 0], ap.mean(1)
+        mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+
+    return map50, map
+
+
+if __name__ == '__main__':
+    main()
+
+
