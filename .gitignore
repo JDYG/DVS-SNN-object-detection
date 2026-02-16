@@ -8,7 +8,7 @@
 # do not ignore following files
 !*.py
 !*.sh
-!*.m
+!*.md
 # 
 !.gitignore
 
