@@ -7,7 +7,7 @@ Update the energy consumption for GEN1 and DSEC.
 
 | Enc. | Head | GEN1 Encoder N_MAC (M) | GEN1 Encoder E_STG (mJ) | GEN1 Backbone N_AC (M) | GEN1 Backbone fr (%) | GEN1 Backbone E_BB (mJ) | GEN1 Head N_MAC (M) | GEN1 Head E_ADH (mJ) | GEN1 Total energy (mJ) | DSEC Encoder N_MAC (M) | DSEC Encoder E_STG (mJ) | DSEC Backbone N_AC (M) | DSEC Backbone fr (%) | DSEC Backbone E_BB (mJ) | DSEC Head N_MAC (M) | DSEC Head E_ADH (mJ) | DSEC Total energy (mJ) |
 | ---- | ---- | ---------------------: | ----------------------: | ---------------------: | -------------------: | ----------------------: | ------------------: | -------------------: | ---------------------: | ---------------------: | ----------------------: | ---------------------: | -------------------: | ----------------------: | ------------------: | -------------------: | ---------------------: |
-| STG  | ADH  |                    842 |                    3.87 |                     37 |                11.25 |                    2.53 |              489.97 |                 2.25 |                   6.15 |                  11902 |                   54.75 |                    707 |                15.32 |                    3.65 |                 517 |                 2.38 |                  57.75 |
+| STG  | ADH  |                    842 |                    3.87 |                     37 |                11.25 |                    2.53 |              489.97 |                 2.25 |                   8.66 |                  11902 |                   54.75 |                    707 |                15.32 |                    3.65 |                 517 |                 2.38 |                  60.79 |
 
 
 ## Overview
