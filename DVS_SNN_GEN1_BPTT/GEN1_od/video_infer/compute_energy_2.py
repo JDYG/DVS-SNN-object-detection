@@ -1,19 +1,19 @@
 from thop import profile
-from DSEC_od.models_spiking.builder import build_detection, build_embedding, build_attention, build_latent_mem
+from GEN1_od.models_spiking.builder import build_detection, build_embedding, build_attention, build_latent_mem
 import torch.nn as nn
 import torch
 import numpy as np
 from importlib import machinery
 from spikingjelly.activation_based import layer
-config_path = 'DSEC_od/config_test/config_yoloCS3_20e3.py'
-# config_path = 'DSEC_od/config_test/config_yolox_20e3.py'
+config_path = 'GEN1_od/config_test/config_yoloCS3_64attn_20e3_hard.py'
+# config_path = 'GEN1_od/config_test/config_yolox_64attn_20e3_hard.py'
+# config_path = 'GEN1_od/config_test/config_yoloCS3_128attn_20e3_hard.py'
 config_module = machinery.SourceFileLoader('config', config_path).load_module()
 
 cfg_embed = config_module.cfg_embed
 cfg_attention = config_module.cfg_attention
 cfg_latent_memory = config_module.cfg_latent_memory
 cfg_Detection = config_module.cfg_Detection
-
 
 # original version for counting macs in snn backbone is wrong, it ignore the macs in the spiking conv
 def count_spikingjelly_conv2d(m, x, y):
@@ -25,6 +25,8 @@ def count_spikingjelly_conv2d(m, x, y):
 custom_ops = {
     layer.Conv2d: count_spikingjelly_conv2d,
 }
+
+
 
 class repn(nn.Module):
     def __init__(self, cfg_embed=None, cfg_attention=None, cfg_latent_memory=None):
@@ -66,45 +68,46 @@ class snn_head(nn.Module):
 
 
 
-N_events = 12.9*100e3 # number of events in 100 ms
-# N_events = 12.9*100e3/5
+N_events = 1835*4*5 # number of events in 100 ms
+# N_events = 1835*4*5 / 5
 ts = 5
-fr= 0.1566
+fr= 0.1311
 n_events_per_ts = int(N_events / ts)
 
 repn_model = repn(cfg_embed, cfg_attention, cfg_latent_memory)
 # input_repn = [torch.randn(1, n_events_per_ts,4 )] * ts
 time = torch.randint(0, int(100e3/ts), (1, n_events_per_ts, 1))
-x = torch.randint(0,640, (1, n_events_per_ts, 1))
-y = torch.randint(0,480, (1, n_events_per_ts, 1))
+x = torch.randint(0,304, (1, n_events_per_ts, 1))
+y = torch.randint(0,240, (1, n_events_per_ts, 1))
 p = torch.randint(0,2, (1, n_events_per_ts, 1))*2-1
 input_repn = [torch.cat((time, x, y, p), dim=-1)] * ts
 macs, params = profile(repn_model, inputs=(input_repn,))
-repn_eng = macs * 4.6 / 1e9
 print(f'repn_MAC: {macs/1e6}')
+repn_eng = macs * 4.6 / 1e9
+
+
+
 
 
 backbone_model = snn_backbone(cfg_Detection)
 detect_model = snn_head(cfg_Detection)
-input_backbone = torch.randn(1, 64, 120, 160)
-macs, params = profile(backbone_model, inputs=(input_backbone,),custom_ops=custom_ops)
-backbone_eng = macs *  fr * 0.9 / 1e9  * ts
+input_backbone = torch.randn(1, 64, 60, 76)
+macs, params = profile(backbone_model, inputs=(input_backbone,), custom_ops=custom_ops)
 print(f'backbone_MAC: {macs/1e6}')
+backbone_eng = macs *  fr * 0.9 / 1e9  * ts
+
 
 input_detect = backbone_model(input_backbone)
 macs, params = profile(detect_model, inputs=(input_detect,))
-detect_eng = macs * 4.6 / 1e9
 print(f'head_MAC: {macs/1e6}')
-total_eng = repn_eng + backbone_eng + detect_eng
+detect_eng = macs * 4.6 / 1e9
+
 
 print(f'repn_eng: {repn_eng}')
 print(f'backbone_eng: {backbone_eng}')
 print(f'detect_eng: {detect_eng}')
-print(f'total_eng: {total_eng}')
+print(f'total_eng: {repn_eng + backbone_eng + detect_eng}')
 
-nj_per_ev = total_eng / N_events *1e3
-print(f'nj_per_ev: {nj_per_ev}')
 
 # macs, params = profile(self, inputs=(events,))
 # eng = macs * 0.9 / 1e9 * 0.2404
-
